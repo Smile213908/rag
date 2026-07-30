@@ -1,0 +1,13 @@
+# 版本按 conda env `rag` 实测钉死(HF 被墙/镜像源环境下保证可复现)
+torch==2.13.0
+sentence-transformers==5.6.0
+rank_bm25==0.2.2
+chromadb==1.5.9
+openai==2.38.0
+numpy==2.5.1
+python-dotenv==1.0.1
+PyMuPDF==1.28.0
+modelscope==1.38.1
+transformers==4.46.3
+fastapi==0.109.2
+uvicorn==0.42.0
