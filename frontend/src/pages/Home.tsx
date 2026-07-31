@@ -43,7 +43,10 @@ export default function Home() {
         </nav>
       </header>
       <main className="min-h-0 flex-1">
-        {tab === 'chat' ? <Chat /> : tab === 'kb' ? <KnowledgeBase /> : <Dashboard />}
+        {/* 三个页签常驻挂载(隐藏非激活项),切换页签/会话均不失活 */}
+        <div className={tab === 'chat' ? 'h-full' : 'hidden'}><Chat /></div>
+        <div className={tab === 'kb' ? 'h-full' : 'hidden'}><KnowledgeBase /></div>
+        <div className={tab === 'dash' ? 'h-full' : 'hidden'}><Dashboard /></div>
       </main>
     </div>
   )

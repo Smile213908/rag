@@ -48,6 +48,32 @@ export interface DocItem {
   uploaded_at?: string | null
 }
 
+// 索引进度(§3.3,分段流程展示)
+export interface DocStatus {
+  doc_id: string
+  status: string // indexing / done / failed
+  progress: number
+  stage: string // queued/uploaded/parsing/chunked/encoding/finalizing/done
+  chunks_done?: number
+  chunks_total?: number | null
+  error?: string
+}
+
+// ---------- 会话管理(§2.4) ----------
+export interface SessionItem {
+  session_id: string
+  title: string
+  turns: number
+  updated_at: string
+  last_question: string
+}
+
+export interface SessionHistory {
+  session_id: string
+  title: string
+  turns: { q: string; a: string }[]
+}
+
 export interface Health {
   chroma: string
   chroma_chunks: number

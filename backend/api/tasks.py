@@ -24,6 +24,8 @@ class TaskStore:
             self._tasks[task_id] = {
                 "task_id": task_id, "doc_id": doc_id, "kind": kind,
                 "status": "indexing", "progress": 0.0,
+                "stage": "queued",           # 分段进度:queued/uploaded/parsing/chunked/encoding/finalizing/done
+                "chunks_done": 0, "chunks_total": 0,
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "error": "",
             }

@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| 文档版本 | v1.6 |
+| 文档版本 | v1.8 |
 | 创建日期 | 2026-07-22 |
 | 上游文档 | [[01-PRD-产品需求文档]] / [[02-架构设计文档]] |
 | 实现约定 | 后端 FastAPI,Python 3.12,conda env `rag`;REST + SSE;JSON 交换 |
@@ -113,7 +113,9 @@ data: {"finish": true, "answer": "根据现有资料无法回答该问题(未检
 | GET | `/chat/sessions/{id}` | 某会话的历史消息 |
 | DELETE | `/chat/sessions/{id}` | 删除会话(开启新话题) |
 
-> **已实现(v1.4,多轮对话)**:① `POST /chat/ask` 不带 `session_id` 时自动建会话并在 meta 返回;带则续聊——追问先经指代消解改写为独立问题(`engine/rewriter.py`,快模型,失败退回原问题)再检索,meta 增 `standalone_question`(与原文不同时下发);② GET `/chat/sessions`(列表,含轮数/最近问题)、DELETE `/chat/sessions/{id}`(清空上下文)已落地;GET `…/{id}` 历史消息未做(M2 后续);③ 会话存储为单进程内存版(`engine/session.py`,500 会话/10 轮双封顶),迁多实例换 Redis/业务库。
+> **已实现(v1.4,多轮对话)**:① `POST /chat/ask` 不带 `session_id` 时自动建会话并在 meta 返回;带则续聊——追问先经指代消解改写为独立问题(`engine/rewriter.py`,快模型,失败退回原问题)再检索,meta 增 `standalone_question`(与原文不同时下发);② GET `/chat/sessions`(列表,含轮数/最近问题)、DELETE `/chat/sessions/{id}`(清空上下文)已落地;③ 会话存储为单进程内存版(`engine/session.py`,500 会话/10 轮双封顶),迁多实例换 Redis/业务库。
+>
+> **已实现(v1.8,会话管理)**:④ GET `/chat/sessions/{id}` 会话历史已落地(turns 回填前端,保留最近 10 轮);⑤ PATCH `/chat/sessions/{id}` 改标题(`{"title": "..."}`);标题缺省取首条问题前 20 字,列表含 `title`;DELETE 语义确认为「删除会话」。前端问答页:会话侧栏(新增/切换/改标题/删除),消息按会话分存,切换会话/页签均不失活。
 
 ---
 
@@ -146,8 +148,10 @@ file: <二进制 PDF/Word/MD/TXT>
 
 `GET /documents/{doc_id}/status`
 ```json
-{"code":0,"data":{"doc_id":"...","status":"indexing","progress":0.6,"chunks_done":13,"chunks_total":22}}
+{"code":0,"data":{"doc_id":"...","status":"indexing","progress":0.6,
+  "stage":"encoding","chunks_done":13,"chunks_total":22}}
 ```
+> **v1.8 分段进度**:`stage` 枚举 `queued/uploaded/parsing/chunked/encoding/finalizing/done`,对应 RAG 处理流程六段(上传落盘→解析文档→结构分块→向量编码入库→BM25+缓存收尾→完成);`encoding` 段按批回报 `chunks_done/chunks_total`(编码一批 16 块回调一次),前端据此渲染动态流程步骤条。
 
 ### 3.4 删除文档
 
@@ -311,3 +315,4 @@ RAGPipeline().ask_stream(query, top_k=None, doc_filter=None, session_id=None) ->
 | v1.5 | 2026-07-30 | 已实现:§4 运营统计四接口(`engine/stats.py`);补提问日志 `logs/asks.jsonl`(`engine/asklog.py`,M1 遗留缺口);bad case 状态折叠(qa_id 最新记录为准) | — |
 | v1.6 | 2026-07-31 | 已实现:§2.1 答案缓存(`engine/anscache.py`,meta 帧增 `cache_hit`,命中回放 `tokens: 0`,日志 `layer="cache"`;失效挂 `_after_mutation()` 全清;CLI 通道不缓存);快模型封顶 `FAST_MAX_TOKENS`;`RECALL_TOP_N` 经保持率实验收敛(本机 .env=20) | — |
 | v1.7 | 2026-07-31 | M2 验收修复(见 [[06-M2验收报告]] §3):kimi-for-coding 实为思考型,512 封顶致空答案——封顶放宽至 2048 + 空输出自动去封顶重试一次 + 空答案不写入缓存 | — |
+| v1.8 | 2026-07-31 | 已实现:§2.4 会话管理补全——GET `/chat/sessions/{id}` 历史 + PATCH 改标题(标题缺省取首问,列表含 title);§3.3 索引进度分段(`stage` 六段枚举 + encoding 分批 `chunks_done`),支撑前端上传流程动态展示 | — |

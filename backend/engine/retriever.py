@@ -101,14 +101,26 @@ class BGERetriever:
         self._encode_upsert(chunks, batch_size)
         self._after_mutation()
 
-    def _encode_upsert(self, chunks: list[Chunk], batch_size: int = 16) -> None:
-        """编码并写入 Chroma(upsert,幂等;同 cid 覆盖)。"""
+    def _encode_upsert(self, chunks: list[Chunk], batch_size: int = 16,
+                       on_progress=None) -> None:
+        """编码并写入 Chroma(upsert,幂等;同 cid 覆盖)。
+
+        on_progress(done, total):按批回调编码进度(知识库上传的分段进度展示);
+        传入时关闭 tqdm 进度条(回调给前端,进度条给 CLI)。
+        """
         texts = [c.text for c in chunks]
-        # 稠密向量(bge-m3),归一化后进 Chroma
-        dense = self.model.encode(
-            texts, batch_size=batch_size, normalize_embeddings=True,
-            show_progress_bar=True, convert_to_numpy=True,
-        ).astype(np.float32)
+        # 稠密向量(bge-m3),归一化后进 Chroma;分批编码以回报进度
+        vecs: list[np.ndarray] = []
+        for i in range(0, len(texts), batch_size):
+            vecs.append(self.model.encode(
+                texts[i:i + batch_size], batch_size=batch_size,
+                normalize_embeddings=True,
+                show_progress_bar=on_progress is None,
+                convert_to_numpy=True,
+            ).astype(np.float32))
+            if on_progress:
+                on_progress(min(i + batch_size, len(texts)), len(texts))
+        dense = np.vstack(vecs)
         self.col.upsert(
             ids=[c.cid for c in chunks],
             embeddings=dense.tolist(),
@@ -136,11 +148,13 @@ class BGERetriever:
             pass
 
     # ---------- 增量维护(知识库管理接口用) ----------
-    def add_chunks(self, chunks: list[Chunk], batch_size: int = 16) -> None:
-        """增量入库:不清空既有集合,追加编码 + upsert,随后重建 BM25 刷缓存。"""
+    def add_chunks(self, chunks: list[Chunk], batch_size: int = 16,
+                   on_progress=None) -> None:
+        """增量入库:不清空既有集合,追加编码 + upsert,随后重建 BM25 刷缓存。
+        on_progress(done, total):编码分批进度回调(上传流程展示用)。"""
         if not chunks:
             return
-        self._encode_upsert(chunks, batch_size)
+        self._encode_upsert(chunks, batch_size, on_progress=on_progress)
         known = {c.cid for c in self.chunks}
         self.chunks.extend(c for c in chunks if c.cid not in known)
         self._after_mutation()

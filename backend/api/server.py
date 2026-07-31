@@ -140,13 +140,35 @@ def chat_feedback(req: FeedbackRequest, _: None = Depends(_auth)):
 # ---------- 会话管理(docs/03 §2.4) ----------
 @app.get("/api/v1/chat/sessions")
 def list_sessions(_: None = Depends(_auth)):
-    """会话列表(最近更新在前)。"""
+    """会话列表(最近更新在前,含标题)。"""
     return _ok({"items": SESSIONS.list()})
+
+
+@app.get("/api/v1/chat/sessions/{session_id}")
+def session_history(session_id: str, _: None = Depends(_auth)):
+    """会话历史(切换会话回填;内存版,保留最近 10 轮)。"""
+    h = SESSIONS.history(session_id)
+    if h is None:
+        raise HTTPException(404, f"会话不存在: {session_id}")
+    return _ok(h)
+
+
+class RenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=50)
+
+
+@app.patch("/api/v1/chat/sessions/{session_id}")
+def rename_session(session_id: str, req: RenameRequest,
+                   _: None = Depends(_auth)):
+    """修改会话标题。"""
+    if not SESSIONS.rename(session_id, req.title):
+        raise HTTPException(404, f"会话不存在: {session_id}")
+    return _ok({"renamed": True})
 
 
 @app.delete("/api/v1/chat/sessions/{session_id}")
 def clear_session(session_id: str, _: None = Depends(_auth)):
-    """清空会话上下文(开启新话题)。"""
+    """删除会话(开启新话题)。"""
     if not SESSIONS.clear(session_id):
         raise HTTPException(404, f"会话不存在: {session_id}")
     return _ok({"cleared": True})
@@ -173,11 +195,14 @@ def upload_document(file: UploadFile = File(...), _: None = Depends(_auth)):
         f.write(file.file.read())
     doc_id = os.path.splitext(base)[0]
     task_id = tasks.create(doc_id, "upload")
+    tasks.update(task_id, stage="uploaded", progress=0.1)
 
     def _job() -> None:
-        tasks.update(task_id, progress=0.3)  # 已落盘,开始解析+索引
-        _, n = kb.add_document(engine.retriever, path)
-        tasks.update(task_id, progress=0.9, chunks_total=n)
+        _, n = kb.add_document(
+            engine.retriever, path,
+            on_stage=lambda stage, progress, **kw:
+                tasks.update(task_id, stage=stage, progress=progress, **kw))
+        tasks.update(task_id, stage="done", chunks_total=n)
     tasks.run_async(task_id, _job)
     return _ok({"doc_id": doc_id, "status": "indexing", "task_id": task_id})
 
@@ -203,6 +228,8 @@ def document_status(doc_id: str, _: None = Depends(_auth)):
     if t:
         return _ok({"doc_id": doc_id, "status": t["status"],
                     "progress": t["progress"], "error": t["error"],
+                    "stage": t.get("stage", ""),
+                    "chunks_done": t.get("chunks_done", 0),
                     "chunks_total": t.get("chunks_total")})
     for d in kb.list_documents(engine.retriever):
         if d["doc_id"] == doc_id:
@@ -232,9 +259,11 @@ def rebuild_document(doc_id: str, _: None = Depends(_auth)):
     task_id = tasks.create(doc_id, "rebuild")
 
     def _job() -> None:
-        tasks.update(task_id, progress=0.3)
-        _, n = kb.rebuild_document(engine.retriever, doc_id)
-        tasks.update(task_id, progress=0.9, chunks_total=n)
+        _, n = kb.rebuild_document(
+            engine.retriever, doc_id,
+            on_stage=lambda stage, progress, **kw:
+                tasks.update(task_id, stage=stage, progress=progress, **kw))
+        tasks.update(task_id, stage="done", chunks_total=n)
     tasks.run_async(task_id, _job)
     return _ok({"doc_id": doc_id, "status": "indexing", "task_id": task_id})
 

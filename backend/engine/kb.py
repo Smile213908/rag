@@ -36,14 +36,33 @@ def _stamp(chunks: list[Chunk]) -> None:
         c.meta.setdefault("uploaded_at", ts)
 
 
-def add_document(retriever: BGERetriever, path: str) -> tuple[str, int]:
-    """解析一个文档并增量入库,返回 (doc_id, 块数)。"""
+def add_document(retriever: BGERetriever, path: str,
+                 on_stage=None) -> tuple[str, int]:
+    """解析一个文档并增量入库,返回 (doc_id, 块数)。
+
+    on_stage(stage, progress, **kw):分段进度回调(知识库上传流程展示),
+    阶段序列:parsing → chunked → encoding → finalizing。
+    """
+    def _stage(stage: str, progress: float, **kw) -> None:
+        if on_stage:
+            on_stage(stage, progress, **kw)
+
+    _stage("parsing", 0.2)
     chunks = _chunk_file(path)
     if not chunks:
         raise ValueError(f"文档解析后无内容: {os.path.basename(path)}")
     _stamp(chunks)
-    retriever.add_chunks(chunks)
-    return chunks[0].doc_id, len(chunks)
+    total = len(chunks)
+    _stage("chunked", 0.4, chunks_total=total)
+
+    def _enc_progress(done: int, total_: int) -> None:
+        # 编码段占 0.4~0.85 的进度区间
+        _stage("encoding", 0.4 + 0.45 * done / total_,
+               chunks_done=done, chunks_total=total_)
+
+    retriever.add_chunks(chunks, on_progress=_enc_progress)
+    _stage("finalizing", 0.9, chunks_done=total, chunks_total=total)
+    return chunks[0].doc_id, total
 
 
 def delete_document(retriever: BGERetriever, doc_id: str) -> int:
@@ -56,13 +75,16 @@ def delete_document(retriever: BGERetriever, doc_id: str) -> int:
     return removed
 
 
-def rebuild_document(retriever: BGERetriever, doc_id: str) -> tuple[str, int]:
+def rebuild_document(retriever: BGERetriever, doc_id: str,
+                     on_stage=None) -> tuple[str, int]:
     """重建单文档索引(内容更新后)。源文件不存在时报错。"""
     for ext in SUPPORTED_EXT:
         p = os.path.join(DATA_DIR, doc_id + ext)
         if os.path.exists(p):
+            if on_stage:
+                on_stage("parsing", 0.2)
             retriever.remove_doc(doc_id)
-            return add_document(retriever, p)
+            return add_document(retriever, p, on_stage=on_stage)
     raise FileNotFoundError(f"源文件不存在: {doc_id}(支持 {SUPPORTED_EXT})")
 
 

@@ -15,7 +15,7 @@ MAX_TURNS = 10  # 每会话最多保留轮次(改写只取最近几轮,见 rewri
 
 
 class SessionStore:
-    """线程安全的会话表。turns: [{"q": 用户原话, "a": 答案}]。"""
+    """线程安全的会话表。turns: [{"q": 用户原话, "a": 答案}];title 缺省取首条问题。"""
 
     def __init__(self) -> None:
         self._sessions: dict[str, dict] = {}
@@ -27,7 +27,8 @@ class SessionStore:
             sid = session_id or uuid.uuid4().hex
             s = self._sessions.get(sid)
             if s is None:
-                s = {"turns": [], "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                s = {"turns": [], "title": "",
+                     "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                      "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 self._sessions[sid] = s
                 self._evict_if_full()
@@ -40,16 +41,40 @@ class SessionStore:
                 return
             s["turns"].append({"q": q, "a": a})
             s["turns"] = s["turns"][-MAX_TURNS:]
+            if not s.get("title"):  # 首条问题自动成标题
+                s["title"] = q[:20]
             s["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
     def clear(self, session_id: str) -> bool:
         with self._lock:
             return self._sessions.pop(session_id, None) is not None
 
+    def rename(self, session_id: str, title: str) -> bool:
+        """修改会话标题(前端会话管理)。"""
+        title = title.strip()[:50]
+        if not title:
+            return False
+        with self._lock:
+            s = self._sessions.get(session_id)
+            if s is None:
+                return False
+            s["title"] = title
+            return True
+
+    def history(self, session_id: str) -> dict | None:
+        """会话历史(切换会话回填前端);不存在返回 None。"""
+        with self._lock:
+            s = self._sessions.get(session_id)
+            if s is None:
+                return None
+            return {"session_id": session_id, "title": s.get("title", ""),
+                    "turns": list(s["turns"])}
+
     def list(self) -> list[dict]:
         with self._lock:
             return [{
                 "session_id": sid,
+                "title": s.get("title") or (s["turns"][-1]["q"][:20] if s["turns"] else "新会话"),
                 "turns": len(s["turns"]),
                 "updated_at": s["updated_at"],
                 "last_question": s["turns"][-1]["q"][:40] if s["turns"] else "",

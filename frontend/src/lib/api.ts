@@ -1,5 +1,5 @@
 // FastAPI 后端封装(docs/03)。开发态经 vite proxy 走同源 /api。
-import type { AskDone, AskMeta, BadCase, DocItem, Health, HotQuestion, Overview } from '@/types'
+import type { AskDone, AskMeta, BadCase, DocItem, DocStatus, Health, HotQuestion, Overview, SessionHistory, SessionItem } from '@/types'
 
 const BASE = '/api/v1'
 
@@ -113,7 +113,30 @@ export async function rebuildDocument(docId: string): Promise<{ task_id: string 
   )
 }
 
+export async function getDocumentStatus(docId: string): Promise<DocStatus> {
+  return unwrap(await fetch(`${BASE}/documents/${encodeURIComponent(docId)}/status`))
+}
+
 // ---------- 会话管理 ----------
+export async function listSessions(): Promise<SessionItem[]> {
+  const r = await unwrap<{ items: SessionItem[] }>(await fetch(`${BASE}/chat/sessions`))
+  return r.items
+}
+
+export async function getSessionHistory(sessionId: string): Promise<SessionHistory> {
+  return unwrap(await fetch(`${BASE}/chat/sessions/${encodeURIComponent(sessionId)}`))
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<void> {
+  await unwrap(
+    await fetch(`${BASE}/chat/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    }),
+  )
+}
+
 export async function clearSession(sessionId: string): Promise<void> {
   await unwrap(
     await fetch(`${BASE}/chat/sessions/${encodeURIComponent(sessionId)}`, {
