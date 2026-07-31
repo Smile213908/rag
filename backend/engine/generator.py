@@ -22,6 +22,9 @@ from engine.chunking import Chunk
 FAST_LLM_MODEL = os.environ.get("FAST_LLM_MODEL", "kimi-for-coding")
 ROUTE_MIN_SCORE = float(os.environ.get("ROUTE_MIN_SCORE", "0.85"))
 ROUTE_MAX_QLEN = int(os.environ.get("ROUTE_MAX_QLEN", "30"))
+# P1 生成长度约束:快模型 max_tokens 封顶,压端到端 token 硬下限(验收报告建议);
+# 思考型模型(k3)禁用封顶——小 max_tokens 会截断思维链返回空串(见 checker 踩坑)
+FAST_MAX_TOKENS = int(os.environ.get("FAST_MAX_TOKENS", "512"))
 
 
 def route_model(query: str, top_score: float) -> str:
@@ -74,6 +77,8 @@ def generate_answer(
     kwargs = {}
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if model == FAST_LLM_MODEL:
+        kwargs["max_tokens"] = FAST_MAX_TOKENS  # P1:仅快模型封顶
 
     resp = client.chat.completions.create(
         model=model,
@@ -106,6 +111,9 @@ def generate_answer_stream(
     context = _build_context(ranked)
     user = f"【背景资料】\n{context}\n\n【用户问题】\n{query}\n\n【输出要求】分点作答;关键论断标注引用编号;结尾列出引用来源。"
 
+    kwargs = {}
+    if model == FAST_LLM_MODEL:
+        kwargs["max_tokens"] = FAST_MAX_TOKENS  # P1:仅快模型封顶
     stream = client.chat.completions.create(
         model=model,
         messages=[
@@ -114,6 +122,7 @@ def generate_answer_stream(
         ],
         stream=True,
         stream_options={"include_usage": True},
+        **kwargs,
     )
     for event in stream:
         if event.usage is not None:  # 末帧 usage 统计

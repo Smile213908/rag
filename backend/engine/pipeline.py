@@ -118,6 +118,24 @@ class RAGPipeline:
         # 多轮(PRD F4):取会话 → 追问先改写为独立问题再走标准链路
         sid, turns = SESSIONS.get_or_create(session_id)
         standalone = rewrite_query(query, turns)
+
+        # 答案缓存(M2 P0):高频重复问题直接回放,跳过检索+生成;
+        # 键为改写后的独立问题;知识库变更时 retriever._after_mutation 已全清
+        from engine.anscache import get as cache_get, put as cache_put
+        cached = cache_get(standalone)
+        if cached:
+            latency = int((time.time() - t0) * 1000)
+            yield "meta", {"sources": cached["sources"], "refused": False,
+                           "model": cached["model"], "cache_hit": True,
+                           "standalone_question": standalone if standalone != query else None,
+                           "qa_id": qa_id, "session_id": sid}
+            yield "delta", {"text": cached["answer"]}
+            yield "done", {"finish": True, "answer": cached["answer"],
+                           "latency_ms": latency, "tokens": 0}
+            SESSIONS.append(sid, query, cached["answer"])
+            log_ask(qa_id, sid, query, standalone, False, latency, 0,
+                    cached["model"], layer="cache")
+            return
         ranked = self._retrieve_rank(standalone, top_k=top_k, doc_filter=doc_filter)
 
         refused = should_refuse(ranked, REFUSE_THRESHOLD)
@@ -164,6 +182,7 @@ class RAGPipeline:
             full.append(delta)
             yield "delta", {"text": delta}
         answer = "".join(full)
+        cache_put(standalone, answer, sources, model)  # P0:写答案缓存
         latency = int((time.time() - t0) * 1000)
         yield "done", {"finish": True, "answer": answer,
                        "latency_ms": latency,

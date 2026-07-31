@@ -117,7 +117,8 @@ class BGERetriever:
         )
 
     def _after_mutation(self) -> None:
-        """集合内容变更后的统一收尾:刷新 build_id 指纹 + 重建 BM25 + 刷缓存。
+        """集合内容变更后的统一收尾:刷新 build_id 指纹 + 重建 BM25 + 刷缓存
+        + 答案缓存失效(P0)。
 
         注意:Chroma modify 校验拒绝元数据中出现 hnsw:space(距离函数创建后
         不可改),这里只写 build_id,实际距离配置不受影响。
@@ -127,6 +128,12 @@ class BGERetriever:
         self.col.modify(metadata={"build_id": build_id})
         self._build_bm25()
         self._save_bm25_cache(build_id)
+        # 答案缓存失效(M2 P0):索引内容变了,旧答案可能过时,全清
+        try:
+            from engine.anscache import clear as anscache_clear
+            anscache_clear()
+        except Exception:
+            pass
 
     # ---------- 增量维护(知识库管理接口用) ----------
     def add_chunks(self, chunks: list[Chunk], batch_size: int = 16) -> None:
