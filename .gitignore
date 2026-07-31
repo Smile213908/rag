@@ -25,3 +25,6 @@ docs_data/
 
 # ===== 评估运行产物(可随时重跑生成,且含制度答案片段) =====
 backend/eval/results/
+
+# 用户库(含密码哈希,不入库)
+users.db
