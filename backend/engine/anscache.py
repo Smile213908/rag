@@ -2,7 +2,8 @@
 
 - 精确匹配:问题归一化(去全部空白 + 去结尾句读)做键;
   一期不做相似问题模糊缓存(防张冠李戴,见设计方案)。
-- 只缓存非拒答答案;知识库任何变更由 retriever._after_mutation 调 clear() 全清。
+- 只缓存非拒答答案;空答案不写(封顶截断/模型异常时防毒化);
+  知识库任何变更由 retriever._after_mutation 调 clear() 全清。
 - 存储 backend/.cache/answers.db(sqlite,可再生,.cache 已 gitignore)。
 - 读写失败一律放行(get 返回 None / put、clear 静默),缓存是优化不是功能。
 """
@@ -58,7 +59,9 @@ def get(query: str) -> dict | None:
 
 def put(query: str, answer: str, sources: list[dict],
         model: str | None) -> None:
-    """写入/覆盖缓存;失败静默。"""
+    """写入/覆盖缓存;失败静默。空答案不写(封顶截断/模型异常时防缓存毒化)。"""
+    if not answer or not answer.strip():
+        return
     try:
         with _conn() as conn:
             conn.execute(

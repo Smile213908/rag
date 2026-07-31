@@ -23,8 +23,9 @@ FAST_LLM_MODEL = os.environ.get("FAST_LLM_MODEL", "kimi-for-coding")
 ROUTE_MIN_SCORE = float(os.environ.get("ROUTE_MIN_SCORE", "0.85"))
 ROUTE_MAX_QLEN = int(os.environ.get("ROUTE_MAX_QLEN", "30"))
 # P1 生成长度约束:快模型 max_tokens 封顶,压端到端 token 硬下限(验收报告建议);
-# 思考型模型(k3)禁用封顶——小 max_tokens 会截断思维链返回空串(见 checker 踩坑)
-FAST_MAX_TOKENS = int(os.environ.get("FAST_MAX_TOKENS", "512"))
+# 注意 kimi-for-coding 也是思考型模型(隐藏推理烧 completion 预算)——512 曾把
+# 预算烧光导致空答案(M2 验收实测),故封顶放到 2048;k3 这类更重的思考型模型禁用封顶
+FAST_MAX_TOKENS = int(os.environ.get("FAST_MAX_TOKENS", "2048"))
 
 
 def route_model(query: str, top_score: float) -> str:
@@ -77,18 +78,26 @@ def generate_answer(
     kwargs = {}
     if temperature is not None:
         kwargs["temperature"] = temperature
-    if model == FAST_LLM_MODEL:
+    capped = model == FAST_LLM_MODEL
+    if capped:
         kwargs["max_tokens"] = FAST_MAX_TOKENS  # P1:仅快模型封顶
 
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": user},
-        ],
-        **kwargs,
-    )
-    return resp.choices[0].message.content.strip()
+    # 空输出重试:kimi-for-coding 是思考型,封顶可能把 completion 预算烧光
+    # 返回空串(M2 验收实测)——空输出时去封顶重试一次,宁慢不空
+    for attempt in range(2 if capped else 1):
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": user},
+            ],
+            **kwargs,
+        )
+        content = resp.choices[0].message.content.strip()
+        if content:
+            return content
+        kwargs.pop("max_tokens", None)
+    return ""
 
 
 def generate_answer_stream(
@@ -112,21 +121,33 @@ def generate_answer_stream(
     user = f"【背景资料】\n{context}\n\n【用户问题】\n{query}\n\n【输出要求】分点作答;关键论断标注引用编号;结尾列出引用来源。"
 
     kwargs = {}
-    if model == FAST_LLM_MODEL:
+    capped = model == FAST_LLM_MODEL
+    if capped:
         kwargs["max_tokens"] = FAST_MAX_TOKENS  # P1:仅快模型封顶
-    stream = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": user},
-        ],
-        stream=True,
-        stream_options={"include_usage": True},
-        **kwargs,
-    )
-    for event in stream:
-        if event.usage is not None:  # 末帧 usage 统计
-            return event.usage.total_tokens
-        delta = event.choices[0].delta.content if event.choices else None
-        if delta:
-            yield delta
+    # 空输出重试(同 generate_answer):封顶截断思维链会导致整段空输出,
+    # 此时尚未 yield 任何内容,可安全去封顶重试一次
+    for attempt in range(2 if capped else 1):
+        usage = None
+        produced = False
+        stream = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": user},
+            ],
+            stream=True,
+            stream_options={"include_usage": True},
+            **kwargs,
+        )
+        for event in stream:
+            if event.usage is not None:  # 末帧 usage 统计
+                usage = event.usage.total_tokens
+                continue
+            delta = event.choices[0].delta.content if event.choices else None
+            if delta:
+                produced = True
+                yield delta
+        if produced:
+            return usage
+        kwargs.pop("max_tokens", None)
+    return usage

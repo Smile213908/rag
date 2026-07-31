@@ -84,7 +84,7 @@ data: {"finish": true, "answer": "根据现有资料无法回答该问题(未检
 | `refused` | 是否触发拒答(置信度低于阈值) |
 | `cache_hit` | 是否命中答案缓存(M2 P0);命中时 delta 一次性回放完整答案,done 帧 `tokens: 0`、`latency_ms`≈0 |
 
-> **已实现(v1.6,M2 性能优化)**:① **答案缓存**(`engine/anscache.py`,sqlite `backend/.cache/answers.db`):非拒答答案按「指代消解后的独立问题」归一化(去全部空白 + 去结尾句读)做精确匹配缓存,一期不做相似问题模糊缓存;② **失效**:知识库任何变更(上传/删除/重建)经 `retriever._after_mutation()` 统一全清,宁可全清不漏清;③ 读写失败静默放行(缓存是加速层,不是正确性依赖);CLI `ask()` 有意不走缓存,留作调试对照通道;④ **快模型输出封顶** `FAST_MAX_TOKENS`(env,默认 512,仅 `FAST_LLM_MODEL` 生效,思考型模型禁用——小封顶会截断思维链返回空串);⑤ **召回候选收敛** `RECALL_TOP_N` 默认 50,经候选集保持率实验(eval v1 库内 39 题 top-50/30/20 均 100%)本机 `.env` 已收敛至 20,rerank 对数减 60%。
+> **已实现(v1.6,M2 性能优化)**:① **答案缓存**(`engine/anscache.py`,sqlite `backend/.cache/answers.db`):非拒答答案按「指代消解后的独立问题」归一化(去全部空白 + 去结尾句读)做精确匹配缓存,一期不做相似问题模糊缓存;② **失效**:知识库任何变更(上传/删除/重建)经 `retriever._after_mutation()` 统一全清,宁可全清不漏清;③ 读写失败静默放行(缓存是加速层,不是正确性依赖);CLI `ask()` 有意不走缓存,留作调试对照通道;④ **快模型输出封顶** `FAST_MAX_TOKENS`(env,默认 2048,仅 `FAST_LLM_MODEL` 生效;注意 kimi-for-coding 也是思考型——512 曾致空答案,故封顶放宽 + **空输出自动去封顶重试一次**,宁慢不空);空答案不写入缓存(防毒化);⑤ **召回候选收敛** `RECALL_TOP_N` 默认 50,经候选集保持率实验(eval v1 库内 39 题 top-50/30/20 均 100%)本机 `.env` 已收敛至 20,rerank 对数减 60%。
 
 ### 2.2 提问(非流式,可选)
 
@@ -310,3 +310,4 @@ RAGPipeline().ask_stream(query, top_k=None, doc_filter=None, session_id=None) ->
 | v1.4 | 2026-07-30 | 已实现:§2.4 多轮对话——指代消解改写(`engine/rewriter.py`)+ 会话存储(`engine/session.py` 内存版)+ GET/DELETE `/chat/sessions`;meta 增 `model`/`standalone_question` 字段;`/chat/ask/sync` 上游异常 500→503 | — |
 | v1.5 | 2026-07-30 | 已实现:§4 运营统计四接口(`engine/stats.py`);补提问日志 `logs/asks.jsonl`(`engine/asklog.py`,M1 遗留缺口);bad case 状态折叠(qa_id 最新记录为准) | — |
 | v1.6 | 2026-07-31 | 已实现:§2.1 答案缓存(`engine/anscache.py`,meta 帧增 `cache_hit`,命中回放 `tokens: 0`,日志 `layer="cache"`;失效挂 `_after_mutation()` 全清;CLI 通道不缓存);快模型封顶 `FAST_MAX_TOKENS`;`RECALL_TOP_N` 经保持率实验收敛(本机 .env=20) | — |
+| v1.7 | 2026-07-31 | M2 验收修复(见 [[06-M2验收报告]] §3):kimi-for-coding 实为思考型,512 封顶致空答案——封顶放宽至 2048 + 空输出自动去封顶重试一次 + 空答案不写入缓存 | — |
