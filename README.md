@@ -1,7 +1,7 @@
 # 企业知识库智能问答系统(RAG)
 
 > 基于 bge-m3 + bge-reranker + Chroma + 云端 LLM 的 RAG 系统(全 CPU,云端 LLM 生成)。
-> M1 已验收(有条件通过,见 `backend/docs/05-M1验收报告.md`);M2 方向:模型路由降延迟、多轮对话、运营看板。
+> M1 已验收(有条件通过,见 `backend/docs/05-M1验收报告.md`);M2 进行中:模型路由/多轮对话/运营看板已落地(2026-07-30),余权限控制与性能优化。
 
 ## 目录结构(前后端分离)
 
@@ -48,6 +48,8 @@ cd ../frontend && npm install && npm run dev      # 前端 http://localhost:3000
 ```
 
 云端 LLM 配置在 `backend/.env`(含密钥,已 gitignore)。
+
+> **知识库源文档需本地自备**:`backend/docs_data/` 为公司内部资料,未纳入本仓库。clone 后请自行放入制度文档(.md/.txt/.pdf),再执行 `python -m engine.pipeline` 建索引;`backend/.env` 参照 `backend/.env.example` 配置。
 
 ## 环境关键坑
 
