@@ -44,11 +44,12 @@ def load_evalset(path: str = EVALSET) -> list[dict]:
 
 def run_eval(threshold: float, items: list[dict]) -> list[dict]:
     """对每条标注跑「检索→精排」(不调用 LLM),记录命中情况与最高分。"""
+    from engine.paths import DEVICE
     from engine.reranker import BGEReranker
     from engine.retriever import BGERetriever
 
-    retriever = BGERetriever()
-    reranker = BGEReranker()
+    retriever = BGERetriever(device=DEVICE)
+    reranker = BGEReranker(device=DEVICE)
     assert retriever.load_existing(), "Chroma 无索引,先 python -m engine.pipeline 建索引"
     print(f"索引 {retriever.col.count()} 块,评估 {len(items)} 条(检索+精排,不调 LLM)...")
 

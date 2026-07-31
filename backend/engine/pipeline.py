@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), ".env"))
 
-from engine.paths import DATA_DIR
+from engine.paths import DATA_DIR, DEVICE
 from engine.chunking import chunk_markdown_file, chunk_pdf_file, Chunk
 from engine.checker import CRAG_CHECK, materials_support
 from engine.asklog import log_ask
@@ -56,9 +56,9 @@ def load_chunks(data_dir: str = DATA_DIR) -> list[Chunk]:
 class RAGPipeline:
     def __init__(self):
         print("连接 Chroma + 加载 bge-m3(首次会从 ModelScope 下载模型)...")
-        self.retriever = BGERetriever()
+        self.retriever = BGERetriever(device=DEVICE)
         print("加载 bge-reranker-base...")
-        self.reranker = BGEReranker()
+        self.reranker = BGEReranker(device=DEVICE)
 
     def build_index(self, data_dir: str = DATA_DIR, rebuild: bool = False) -> None:
         """建索引。Chroma 已有数据且 rebuild=False 时直接复用,跳过 bge 编码。"""
